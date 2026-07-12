@@ -669,19 +669,19 @@ async def main():
             while True:
                 await mcp.run_stdio_async()
                 await asyncio.sleep(0.1)
-
-        while not shutdown_event.is_set():
-            # Run the server with the selected transport (always async)
-            if args.transport == "sse":
-                # Update FastMCP settings based on command line arguments
-                mcp.settings.host = args.sse_host
-                mcp.settings.port = args.sse_port
-                await mcp.run_sse_async()
-            elif args.transport == "streamable_http":
-                mcp.settings.host = args.streamable_http_host
-                mcp.settings.port = args.streamable_http_port
-                await mcp.run_streamable_http_async()
-            await asyncio.sleep(0.1)
+        # HTTP-транспорты (sse / streamable_http) запускаем ОДИН раз и блокируемся.
+        # run_*_async() строят uvicorn-app, чей lifespan поднимает task group
+        # session-менеджера РОВНО ОДИН раз (one-shot). Ре-энтрантный while повторно
+        # дёргает уже отработавший менеджер → "Task group is not initialized" 500
+        # на каждом запросе (контейнер running, но tools/list молчит).
+        if args.transport == "sse":
+            mcp.settings.host = args.sse_host
+            mcp.settings.port = args.sse_port
+            await mcp.run_sse_async()
+        elif args.transport == "streamable_http":
+            mcp.settings.host = args.streamable_http_host
+            mcp.settings.port = args.streamable_http_port
+            await mcp.run_streamable_http_async()
         logger.info("Shutdown event detected, cleaning up...")
         await shutdown()
     except asyncio.CancelledError:
